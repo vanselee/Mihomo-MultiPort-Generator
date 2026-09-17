@@ -1,5 +1,71 @@
 # Mihomo Multi-Port Config Generator
 
+[🇨🇳 中文文档请往下看](#-中文说明)
+
+A lightweight Python script that converts standard Clash subscription links into **Mihomo (Clash Meta)** Multi-Port Inbounds configuration files.
+
+## ✨ Core Features & Use Cases
+
+**Core Problem Solved: One-machine multi-node isolation (Assigning different browser profiles to different proxy nodes).**
+
+When managing multiple social media or e-commerce accounts on a single computer, it's often necessary to assign a different IP address (country or region) to each browser profile to prevent account association.
+
+This script automates the process:
+1. **Auto-Parses** your Clash subscription link.
+2. **Multi-Port Allocation**: Automatically allocates independent local listening ports for each node (starting from `10001` by default).
+3. **Node Renaming**: Automatically adds a port number prefix to the node name (e.g., `[10001] Node A`) for easy identification in your proxy client.
+4. **Force Skip Certificate Verification**: Automatically forces `skip-cert-verify: true` for all nodes, fixing connection drops caused by strict certificate issues on some nodes.
+5. Generates a clean, bloat-free `mihomo_multi_port.yaml` file.
+
+## 🚀 Installation
+
+Ensure you have Python 3 installed. Then, install the required `PyYAML` library:
+
+```bash
+pip install pyyaml
+```
+
+## 🛠️ Usage
+
+### Method 1: Command-line Argument
+Pass your Clash subscription link directly via the command line:
+```bash
+python generate_proxy.py "http://your-subscription-link..."
+```
+
+### Method 2: Interactive Mode
+Run the script without arguments and it will prompt you for the link:
+```bash
+python generate_proxy.py
+```
+
+Upon success, a `mihomo_multi_port.yaml` file will be generated in the same directory.
+
+## 💻 How to use in clients?
+
+### 1. Start the Proxy Core (Clash Verge / Mihomo)
+- Drag and drop the generated `mihomo_multi_port.yaml` into your **Clash Verge** "Profiles" list.
+- Click to select and activate the profile.
+- **⚠️ IMPORTANT**: Turn off **System Proxy** and **TUN Mode** in the settings. Ensure the Proxy Mode is set to **Rule**.
+
+### 2. Browser Traffic Split Setup
+In the browser you want to isolate (e.g., Chrome):
+- Create a new Browser Profile (Profile 1), install and open the `Proxy SwitchyOmega` extension.
+- Set Proxy Protocol to `SOCKS5` (or `HTTP`).
+- Set Proxy Server to `127.0.0.1` and Port to `10001`.
+- Create another Browser Profile (Profile 2), repeat the setup, but set Port to `10002`.
+- And so on...
+
+Your Profile 1 traffic will strictly route through Node 1, Profile 2 through Node 2, perfectly achieving physical-level IP isolation.
+
+## 📝 Notes
+- The script defaults to extracting the first 50 nodes (port range `10001` - `10050`). You can manually change the `max_nodes` parameter inside the script if you need more.
+- This script only supports standard **Clash YAML format** subscriptions (provided by most proxy providers). It does not support parsing raw Base64 vmess/vless links directly.
+
+---
+
+<h2 id="-中文说明">🇨🇳 中文说明</h2>
+
 这是一个用 Python 编写的轻量级脚本，用于将标准的 Clash 订阅链接转换为 **Mihomo (Clash Meta)** 的多端口入站 (Multi-Port Inbounds) 配置文件。
 
 ## ✨ 核心功能与使用场景
