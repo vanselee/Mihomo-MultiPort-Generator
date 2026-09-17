@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mihomo 多端口分流配置生成器</title>
+    <!-- 引入 Tailwind CSS 快速实现美观的 UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 js-yaml 库用于解析和生成 YAML -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-2xl w-full bg-white rounded-xl shadow-lg p-8">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2">🚀 Mihomo 多端口配置生成器</h1>
+            <p class="text-gray-500 text-sm">一键将 Clash 订阅转换为多端口独立节点配置（适用于浏览器防关联隔离）</p>
+        </div>
+
+        <div class="space-y-6">
+            <div>
+                <label for="sub-url" class="block text-sm font-medium text-gray-700 mb-1">Clash 订阅链接</label>
+                <input type="url" id="sub-url" placeholder="http://..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">
+            </div>
+
+            <button id="generate-btn" onclick="generateConfig()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg shadow transition-colors flex justify-center items-center">
+                <span id="btn-text">立即生成并下载配置文件</span>
+                <svg id="loading-spinner" class="animate-spin ml-2 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </button>
+
+            <div id="status-message" class="text-center text-sm font-medium hidden mt-4"></div>
+        </div>
+
+        <div class="mt-10 bg-blue-50 text-blue-800 p-4 rounded-lg text-sm leading-relaxed">
+            <h3 class="font-bold mb-2">💡 工作原理 (方案二实现)</h3>
+            <p>1. 本页面使用公共 <strong>CORS 代理</strong> 自动为你抓取订阅链接数据，绕过浏览器跨域限制。</p>
+            <p>2. 解析后，自动为节点分配 10001 起始的混合端口。</p>
+            <p>3. 自动向节点追加 <code>skip-cert-verify: true</code> 解决证书断流问题。</p>
+            <p>4. 所有生成操作均在你的浏览器本地完成，生成后自动触发文件下载。</p>
+        </div>
+    </div>
+
+    <script>
+        async function generateConfig() {
+            const urlInput = document.getElementById('sub-url').value.trim();
+            const btnText = document.getElementById('btn-text');
+            const spinner = document.getElementById('loading-spinner');
+            const generateBtn = document.getElementById('generate-btn');
+            const statusMsg = document.getElementById('status-message');
+
+            if (!urlInput) {
+                showStatus("请输入有效的订阅链接！", "text-red-600");
+                return;
+            }
+
+            // 更新 UI 为加载状态
+            btnText.innerText = "正在获取与解析...";
+            spinner.classList.remove("hidden");
+            generateBtn.disabled = true;
+            generateBtn.classList.add("opacity-70", "cursor-not-allowed");
+            statusMsg.classList.add("hidden");
+
+            try {
+                // 使用公共 CORS 代理解决跨域问题
+                // 常见免费代理: api.allorigins.win, corsproxy.io 等
+                const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(urlInput);
+                
+                const response = await fetch(proxyUrl, {
+                    // 添加虚假的 User-Agent 防止被部分机场拦截（受限于浏览器安全机制，部分代理可能忽略此请求头）
+                    headers: { 'User-Agent': 'ClashforWindows/0.19.23' } 
+                });
+
+                if (!response.ok) throw new Error(`网络请求失败 (状态码: ${response.status})`);
+                
+                const yamlText = await response.text();
+                
+                // 解析 YAML
+                const data = jsyaml.load(yamlText);
+                if (!data || !data.proxies) {
+                    throw new Error("未找到 proxies 节点，请确保这是标准的 Clash YAML 订阅！");
+                }
+
+                // 取前 50 个节点
+                const proxies = data.proxies.slice(0, 50);
+                
+                let listeners = [];
+                let rules = [];
+                let startPort = 10001;
+
+                // 构建数据
+                proxies.forEach((proxy, i) => {
+                    proxy['skip-cert-verify'] = true;
+                    let port = startPort + i;
+                    let oldName = proxy['name'];
+                    let newName = `[${port}] ${oldName}`;
+                    proxy['name'] = newName;
+
+                    listeners.push({
+                        name: `inbound-${port}`,
+                        type: 'mixed',
+                        port: port
+                    });
+
+                    rules.push(`IN-PORT,${port},${newName}`);
+                });
+
+                rules.push("MATCH,DIRECT");
+
+                const newConfig = {
+                    'allow-lan': true,
+                    'mode': 'rule',
+                    'log-level': 'info',
+                    'proxies': proxies,
+                    'listeners': listeners,
+                    'rules': rules
+                };
+
+                // 转换为 YAML 文本
+                const newYamlText = jsyaml.dump(newConfig, { 
+                    noRefs: true, 
+                    lineWidth: -1,
+                    styles: { '!!null': 'empty' } // 保持原本格式
+                });
+
+                // 触发下载
+                const blob = new Blob([newYamlText], { type: 'text/yaml;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'mihomo_multi_port.yaml';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showStatus(`✅ 成功生成并下载！共分配 ${proxies.length} 个节点端口。`, "text-green-600");
+
+            } catch (error) {
+                console.error(error);
+                showStatus(`❌ 生成失败: ${error.message}`, "text-red-600");
+            } finally {
+                // 恢复 UI 状态
+                btnText.innerText = "立即生成并下载配置文件";
+                spinner.classList.add("hidden");
+                generateBtn.disabled = false;
+                generateBtn.classList.remove("opacity-70", "cursor-not-allowed");
+            }
+        }
+
+        function showStatus(text, colorClass) {
+            const statusMsg = document.getElementById('status-message');
+            statusMsg.innerText = text;
+            statusMsg.className = `text-center text-sm font-medium mt-4 ${colorClass}`;
+            statusMsg.classList.remove("hidden");
+        }
+    </script>
+</body>
+</html>
